@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Habit Tracker</title>
+  <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#151515" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>Habits</h1>
+    <span id="sync" class="sync" title="Sync status"></span>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="today" class="active">Today</button>
+    <button data-tab="week">Week</button>
+    <button data-tab="review">Review</button>
+    <button data-tab="history">History</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+
+  <main id="view"></main>
+
+  <dialog id="passDialog">
+    <form method="dialog" id="passForm">
+      <h2>Enter passcode</h2>
+      <p class="muted">Syncs your data across phone and desktop.</p>
+      <input id="passInput" type="password" autocomplete="current-password" required />
+      <div class="row end">
+        <button value="cancel" formnovalidate class="ghost">Use offline</button>
+        <button value="ok" class="primary">Unlock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
