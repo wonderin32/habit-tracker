@@ -200,6 +200,7 @@ function touchHabits() {
 
 let tab = "today";
 let selectedDay = todayKey();
+let selectedWeek = weekStart(todayKey());
 const view = document.getElementById("view");
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -207,7 +208,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 
 function render() {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  ({ today: renderToday, week: renderSoon, review: renderSoon, history: renderSoon, settings: renderSettings }[tab])();
+  ({ today: renderToday, week: renderWeek, review: renderSoon, history: renderSoon, settings: renderSettings }[tab])();
 }
 
 function renderToday() {
@@ -250,6 +251,90 @@ function renderToday() {
         </div>
       </div>`;
     }).join("")}
+  `;
+}
+
+const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+
+function fmtRange(start) {
+  const opts = { month: "short", day: "numeric" };
+  const a = parseKey(start).toLocaleDateString(undefined, opts);
+  const b = parseKey(addDays(start, 6)).toLocaleDateString(undefined, opts);
+  return `${a} – ${b}`;
+}
+
+// Progress for one habit in the week starting `ws`.
+function weekStatus(h, ws) {
+  const days = weekDays(ws);
+  const today = todayKey();
+  const isCurrent = ws === weekStart(today);
+  const total = days.reduce((sum, d) => sum + (entry(d, h.id).min || 0), 0);
+  // Pace counts only full days already behind you, so Monday morning isn't "behind".
+  const daysDone = isCurrent ? days.indexOf(today) : 7;
+  const expected = (h.weeklyMin * daysDone) / 7;
+  const daysLeft = 7 - daysDone;
+  const hit = total >= h.weeklyMin;
+  const behind = isCurrent && !hit && total < expected;
+  const perDay = !hit && daysLeft > 0 ? (h.weeklyMin - total) / daysLeft : 0;
+  const cells = days.map((d) => {
+    const e = entry(d, h.id);
+    const future = d > today;
+    const ok = h.dailyMin > 0 ? e.min >= h.dailyMin : e.done;
+    // Today isn't a miss until it's over.
+    const state = ok ? "hit" : future || d === today ? "open" : h.dailyMin > 0 ? "miss" : "off";
+    return { d, state, future };
+  });
+  const floorHits = cells.filter((c) => c.state === "hit").length;
+  return { total, expected, hit, behind, perDay, isCurrent, cells, floorHits, daysDone };
+}
+
+function renderWeek() {
+  const ws = selectedWeek;
+  const isCurrent = ws === weekStart(todayKey());
+  const habits = activeHabits();
+  const stats = habits.map((h) => [h, weekStatus(h, ws)]);
+  const good = stats.filter(([, s]) => (isCurrent ? !s.behind : s.hit)).length;
+
+  view.innerHTML = `
+    <div class="datebar">
+      <button class="icon-btn" data-wnav="-7" aria-label="Previous week">‹</button>
+      <span class="label">${isCurrent ? "This week" : fmtRange(ws)}</span>
+      <button class="icon-btn" data-wnav="7" aria-label="Next week" ${isCurrent ? "disabled" : ""}>›</button>
+      ${isCurrent ? "" : '<button class="icon-btn" data-wnav="now">Now</button>'}
+    </div>
+    <p class="muted summary">${isCurrent ? `${fmtRange(ws)} · ${good} of ${habits.length} on pace` : `${good} of ${habits.length} targets hit`}</p>
+    ${stats.map(([h, s]) => {
+      const pct = h.weeklyMin ? Math.min(100, (s.total / h.weeklyMin) * 100) : 100;
+      const pacePct = h.weeklyMin ? Math.min(100, (s.expected / h.weeklyMin) * 100) : 0;
+      const tag = s.hit ? '<span class="tag">Target hit</span>'
+        : s.behind ? '<span class="tag warn">Behind pace</span>'
+        : s.isCurrent ? '<span class="tag neutral">On pace</span>'
+        : '<span class="tag warn">Missed</span>';
+      const floorLine = h.dailyMin > 0
+        ? `<span>Daily ${h.dailyMin}m: ${s.floorHits}/${s.isCurrent ? s.daysDone + (s.cells[s.daysDone]?.state === "hit" ? 1 : 0) : 7} days</span>`
+        : "";
+      return `
+      <div class="card">
+        <div class="spread"><h3>${esc(h.name)}</h3>${tag}</div>
+        <div class="bar ${s.hit ? "done" : s.behind ? "behind" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="${h.weeklyMin}" aria-valuenow="${s.total}">
+          <div class="fill" style="width:${pct}%"></div>
+          ${s.isCurrent && !s.hit && pacePct > 0 ? `<div class="pace" style="left:${pacePct}%" title="Where you should be by now"></div>` : ""}
+        </div>
+        <div class="weekline spread">
+          <span><b>${fmtMin(s.total)}</b> / ${fmtMin(h.weeklyMin)}</span>
+          <span>${s.perDay ? `~${fmtMin(s.perDay)}/day to finish` : s.hit && s.total > h.weeklyMin ? `+${fmtMin(s.total - h.weeklyMin)} over` : ""}</span>
+        </div>
+        <div class="days">
+          ${s.cells.map((c, i) => `<button class="day ${c.state}" data-day="${c.d}" ${c.future ? "disabled" : ""} title="${esc(prettyDate(c.d))}">${DAY_LETTERS[i]}</button>`).join("")}
+        </div>
+        ${floorLine ? `<div class="weekline">${floorLine}</div>` : ""}
+      </div>`;
+    }).join("")}
+    <p class="muted legend">
+      <span><span class="day hit"></span>${habits.some((h) => h.dailyMin) ? "Touched / daily min hit" : "Touched"}</span>
+      ${habits.some((h) => h.dailyMin) ? '<span><span class="day miss"></span>Daily min missed</span>' : ""}
+      <span>Tap a day to edit it</span>
+    </p>
   `;
 }
 
@@ -318,6 +403,21 @@ view.addEventListener("click", (ev) => {
   const t = ev.target;
   const card = t.closest("[data-hid]");
   const hid = card?.dataset.hid;
+
+  const wnav = t.closest("[data-wnav]");
+  if (wnav) {
+    const v = wnav.dataset.wnav;
+    const now = weekStart(todayKey());
+    selectedWeek = v === "now" ? now : addDays(selectedWeek, Number(v));
+    if (selectedWeek > now) selectedWeek = now;
+    return render();
+  }
+  const dayBtn = t.closest("[data-day]");
+  if (dayBtn) {
+    selectedDay = dayBtn.dataset.day;
+    tab = "today";
+    return render();
+  }
 
   const nav = t.closest("[data-nav]");
   if (nav) {
@@ -429,7 +529,7 @@ sync.run().then(() => { if (sync.state === "locked" && !sync.pass()) askPasscode
 // Pick up changes from the other device when coming back to the app.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    if (tab === "today" && selectedDay > todayKey()) selectedDay = todayKey();
+    if (selectedDay > todayKey()) selectedDay = todayKey();
     sync.run();
   }
 });

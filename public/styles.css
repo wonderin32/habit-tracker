@@ -6,6 +6,7 @@
   --line: #e4e4df;
   --accent: #2f6f4f;
   --accent-soft: #e3efe8;
+  --on-accent: #ffffff;
   --warn: #b5561b;
   --warn-soft: #fbeadf;
   --bar: #ecece7;
@@ -20,6 +21,7 @@
     --line: #2f2f2d;
     --accent: #6cc49a;
     --accent-soft: #1f3a2d;
+    --on-accent: #0f2219;
     --warn: #f0995e;
     --warn-soft: #3d281b;
     --bar: #2c2c2a;
@@ -79,7 +81,7 @@ button, input { font: inherit; color: inherit; }
   width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--line);
   background: transparent; cursor: pointer; flex: none; display: grid; place-items: center;
 }
-.check.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.check.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .check svg { width: 18px; height: 18px; }
 .minutes { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .minutes input {
@@ -123,3 +125,24 @@ dialog input { width: 100%; height: 40px; margin: 10px 0 14px; border: 1px solid
 @media (max-width: 420px) {
   .tabs button { padding: 7px 9px; font-size: 15px; }
 }
+
+/* Week view */
+.summary { margin: -4px 0 12px; text-align: center; }
+.tag.neutral { background: var(--bar); color: var(--muted); }
+.bar { position: relative; height: 10px; border-radius: 999px; background: var(--bar); margin-top: 12px; overflow: visible; }
+.bar .fill { height: 100%; border-radius: 999px; background: var(--accent); opacity: .75; transition: width .3s; }
+.bar.done .fill { opacity: 1; }
+.bar.behind .fill { background: var(--warn); }
+.bar .pace { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; opacity: .55; }
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 12px; }
+.day {
+  height: 30px; border-radius: 8px; border: 0; font-size: 12px; cursor: pointer;
+  background: var(--bar); color: var(--muted); display: inline-grid; place-items: center;
+}
+.day.hit { background: var(--accent); color: var(--on-accent); }
+.day.miss { background: var(--warn-soft); color: var(--warn); }
+.day.open { background: transparent; border: 1px dashed var(--line); }
+.day:disabled { cursor: default; opacity: .5; }
+.legend { font-size: 12px; display: flex; gap: 6px 14px; flex-wrap: wrap; }
+.legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .day { width: 14px; height: 14px; border-radius: 4px; }
