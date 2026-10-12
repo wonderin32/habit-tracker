@@ -201,6 +201,9 @@ function touchHabits() {
 let tab = "today";
 let selectedDay = todayKey();
 let selectedWeek = weekStart(todayKey());
+// Review defaults to the week just finished, or this week if it's Sunday.
+const defaultReviewWeek = () => (parseKey(todayKey()).getDay() === 0 ? weekStart(todayKey()) : addDays(weekStart(todayKey()), -7));
+let reviewWeek = defaultReviewWeek();
 const view = document.getElementById("view");
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -208,7 +211,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 
 function render() {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  ({ today: renderToday, week: renderWeek, review: renderSoon, history: renderSoon, settings: renderSettings }[tab])();
+  ({ today: renderToday, week: renderWeek, review: renderReview, history: renderSoon, settings: renderSettings }[tab])();
 }
 
 function renderToday() {
@@ -338,6 +341,50 @@ function renderWeek() {
   `;
 }
 
+function renderReview() {
+  const ws = reviewWeek;
+  const current = weekStart(todayKey());
+  const prev = addDays(ws, -7);
+  // Active habits, plus archived ones that still have time logged that week.
+  const habits = store.data.habits.filter((h) => !h.archived || weekTotal(h.id, ws) > 0);
+  const rows = habits.map((h) => {
+    const s = weekStatus(h, ws);
+    return { h, s, delta: s.total - weekTotal(h.id, prev), pct: h.weeklyMin ? Math.round((s.total / h.weeklyMin) * 100) : 100 };
+  });
+  const hits = rows.filter((r) => r.s.hit).length;
+  const logged = rows.reduce((a, r) => a + r.s.total, 0);
+  const target = rows.reduce((a, r) => a + r.h.weeklyMin, 0);
+  const inProgress = ws === current;
+
+  view.innerHTML = `
+    <div class="datebar">
+      <button class="icon-btn" data-rnav="-7" aria-label="Previous week">‹</button>
+      <span class="label">${fmtRange(ws)}</span>
+      <button class="icon-btn" data-rnav="7" aria-label="Next week" ${ws >= current ? "disabled" : ""}>›</button>
+    </div>
+    ${inProgress ? '<p class="muted summary">Week still in progress</p>' : ""}
+    <div class="card score">
+      <div><div class="big">${hits}<span class="muted"> / ${rows.length}</span></div><div class="muted">targets hit</div></div>
+      <div><div class="big">${fmtMin(logged)}</div><div class="muted">of ${fmtMin(target)} total (${target ? Math.round((logged / target) * 100) : 0}%)</div></div>
+    </div>
+    <div class="card list">
+      ${rows.map(({ h, s, delta, pct }) => `
+        <div class="review-row">
+          <div class="spread">
+            <h3>${esc(h.name)}${h.archived ? ' <span class="muted">(archived)</span>' : ""}</h3>
+            <span class="tag ${s.hit ? "" : inProgress ? "neutral" : "warn"}">${s.hit ? "✓ Hit" : inProgress ? "Open" : "✗ Miss"}</span>
+          </div>
+          <div class="bar ${s.hit ? "done" : inProgress ? "" : "behind"}"><div class="fill" style="width:${Math.min(100, pct)}%"></div></div>
+          <div class="weekline spread">
+            <span><b>${fmtMin(s.total)}</b> / ${fmtMin(h.weeklyMin)} · ${pct}%</span>
+            <span class="${delta > 0 ? "up" : delta < 0 ? "down" : ""}">${delta === 0 ? "same as last week" : `${delta > 0 ? "▲" : "▼"} ${fmtMin(Math.abs(delta))} vs last week`}</span>
+          </div>
+          ${h.dailyMin > 0 ? `<div class="weekline">Daily ${h.dailyMin}m minimum: ${s.floorHits} of 7 days</div>` : ""}
+        </div>`).join("")}
+    </div>
+  `;
+}
+
 function renderSoon() {
   view.innerHTML = `<div class="empty">Coming in the next step.</div>`;
 }
@@ -410,6 +457,13 @@ view.addEventListener("click", (ev) => {
     const now = weekStart(todayKey());
     selectedWeek = v === "now" ? now : addDays(selectedWeek, Number(v));
     if (selectedWeek > now) selectedWeek = now;
+    return render();
+  }
+  const rnav = t.closest("[data-rnav]");
+  if (rnav) {
+    reviewWeek = addDays(reviewWeek, Number(rnav.dataset.rnav));
+    const now = weekStart(todayKey());
+    if (reviewWeek > now) reviewWeek = now;
     return render();
   }
   const dayBtn = t.closest("[data-day]");

@@ -146,3 +146,14 @@ dialog input { width: 100%; height: 40px; margin: 10px 0 14px; border: 1px solid
 .legend { font-size: 12px; display: flex; gap: 6px 14px; flex-wrap: wrap; }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .legend .day { width: 14px; height: 14px; border-radius: 4px; }
+
+/* Review */
+.score { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.score .big { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.score .big .muted { font-size: 18px; font-weight: 500; }
+.list { padding: 0 14px; }
+.review-row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.review-row:last-child { border-bottom: 0; }
+.review-row .bar { margin-top: 10px; height: 8px; }
+.up { color: var(--accent); }
+.down { color: var(--warn); }
