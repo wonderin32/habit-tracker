@@ -157,3 +157,11 @@ dialog input { width: 100%; height: 40px; margin: 10px 0 14px; border: 1px solid
 .review-row .bar { margin-top: 10px; height: 8px; }
 .up { color: var(--accent); }
 .down { color: var(--warn); }
+
+/* History */
+.chips-row { margin-bottom: 10px; flex-wrap: wrap; }
+.chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.chart-box { position: relative; height: 170px; margin-top: 10px; }
+.chart-box.small { height: 130px; }
+.swatch { display: inline-block; width: 14px; height: 10px; border-radius: 3px; background: var(--accent); }
+.swatch.dash { height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--text); }

@@ -204,14 +204,18 @@ let selectedWeek = weekStart(todayKey());
 // Review defaults to the week just finished, or this week if it's Sunday.
 const defaultReviewWeek = () => (parseKey(todayKey()).getDay() === 0 ? weekStart(todayKey()) : addDays(weekStart(todayKey()), -7));
 let reviewWeek = defaultReviewWeek();
+let historyWeeks = 12;
+let charts = [];
 const view = document.getElementById("view");
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function render() {
+  charts.forEach((c) => c.destroy());
+  charts = [];
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  ({ today: renderToday, week: renderWeek, review: renderReview, history: renderSoon, settings: renderSettings }[tab])();
+  ({ today: renderToday, week: renderWeek, review: renderReview, history: renderHistory, settings: renderSettings }[tab])();
 }
 
 function renderToday() {
@@ -385,8 +389,136 @@ function renderReview() {
   `;
 }
 
-function renderSoon() {
-  view.innerHTML = `<div class="empty">Coming in the next step.</div>`;
+// Week starts to chart: up to `n` weeks ending with the current one, not before the first log.
+function historyRange(n) {
+  const current = weekStart(todayKey());
+  const days = Object.keys(store.data.logs).filter((d) => Object.values(store.data.logs[d]).some((e) => e.min > 0)).sort();
+  const first = days.length ? weekStart(days[0]) : current;
+  const weeks = [];
+  for (let w = current; weeks.length < n && (w >= first || weeks.length < 4); w = addDays(w, -7)) weeks.unshift(w);
+  return weeks;
+}
+
+const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+function trend(h, weeks) {
+  const done = weeks.slice(0, -1); // complete weeks only
+  const totals = done.map((w) => weekTotal(h.id, w));
+  const last4 = totals.slice(-4), prev4 = totals.slice(-8, -4);
+  let streak = 0;
+  for (let i = totals.length - 1; i >= 0 && totals[i] >= h.weeklyMin; i--) streak++;
+  return {
+    avg4: avg(last4),
+    change: prev4.length ? avg(last4) - avg(prev4) : null,
+    hits: totals.filter((t) => t >= h.weeklyMin).length,
+    of: totals.length,
+    streak,
+  };
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function renderHistory() {
+  const weeks = historyRange(historyWeeks);
+  const habits = activeHabits();
+  const label = (w) => parseKey(w).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  view.innerHTML = `
+    <div class="row chips-row">
+      ${[8, 12, 26, 52].map((n) => `<button class="chip ${n === historyWeeks ? "on" : ""}" data-range="${n}">${n} wks</button>`).join("")}
+    </div>
+    <div class="card">
+      <div class="spread"><h3>Targets hit per week</h3><span class="muted">of ${habits.length}</span></div>
+      <div class="chart-box small"><canvas id="ch-overview" aria-label="Targets hit per week"></canvas></div>
+    </div>
+    ${habits.map((h) => {
+      const t = trend(h, weeks);
+      const change = t.change == null ? "" : t.change === 0 ? " · flat" : ` · <span class="${t.change > 0 ? "up" : "down"}">${t.change > 0 ? "▲" : "▼"} ${fmtMin(Math.abs(t.change))}</span> vs prior 4`;
+      return `
+      <div class="card">
+        <div class="spread"><h3>${esc(h.name)}</h3><span class="muted">target ${fmtMin(h.weeklyMin)}</span></div>
+        <div class="weekline">4-wk avg <b>${fmtMin(t.avg4)}</b>${change}</div>
+        <div class="weekline">Hit ${t.hits} of ${t.of} weeks${t.streak > 1 ? ` · ${t.streak}-week streak` : ""}</div>
+        <div class="chart-box"><canvas id="ch-${esc(h.id)}" aria-label="${esc(h.name)} weekly totals"></canvas></div>
+      </div>`;
+    }).join("")}
+    <p class="muted legend"><span><span class="swatch"></span>Weekly total</span><span><span class="swatch dash"></span>Target</span><span>Latest bar is this week (in progress)</span></p>
+  `;
+
+  if (!window.Chart) {
+    view.querySelectorAll(".chart-box").forEach((el) => (el.innerHTML = '<p class="muted">Charts need an internet connection to load.</p>'));
+    return;
+  }
+
+  const ink = cssVar("--muted"), line = cssVar("--line"), accent = cssVar("--accent"), text = cssVar("--text"), surface = cssVar("--surface");
+  const labels = weeks.map(label);
+  const lastIdx = weeks.length - 1;
+  const base = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: text, titleColor: surface, bodyColor: surface, displayColors: false, padding: 8 },
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: line }, ticks: { color: ink, maxRotation: 0, autoSkipPadding: 12, font: { size: 11 } } },
+      y: { beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: ink, font: { size: 11 }, maxTicksLimit: 5 } },
+    },
+  };
+  const barStyle = (n) => ({
+    backgroundColor: weeks.map((_, i) => (i === lastIdx ? accent + "66" : accent)),
+    borderRadius: { topLeft: 4, topRight: 4 },
+    borderSkipped: "bottom",
+    maxBarThickness: 28,
+    categoryPercentage: n > 26 ? 0.95 : 0.8,
+  });
+  const inProgress = (i) => (i === lastIdx ? " (in progress)" : "");
+
+  // Overview: number of targets hit each week.
+  const hitsPerWeek = weeks.map((w) => habits.filter((h) => weekTotal(h.id, w) >= h.weeklyMin).length);
+  charts.push(new Chart(document.getElementById("ch-overview"), {
+    type: "bar",
+    data: { labels, datasets: [{ data: hitsPerWeek, ...barStyle(weeks.length) }] },
+    options: {
+      ...base,
+      plugins: { ...base.plugins, tooltip: { ...base.plugins.tooltip, callbacks: {
+        title: (it) => fmtRange(weeks[it[0].dataIndex]) + inProgress(it[0].dataIndex),
+        label: (it) => `${it.raw} of ${habits.length} targets hit`,
+      } } },
+      scales: { ...base.scales, y: { ...base.scales.y, max: habits.length || 1, ticks: { ...base.scales.y.ticks, stepSize: 1 } } },
+    },
+  }));
+
+  // One chart per habit: weekly total (hours) vs target line.
+  for (const h of habits) {
+    const totals = weeks.map((w) => weekTotal(h.id, w));
+    const hrs = (m) => Math.round((m / 60) * 100) / 100;
+    charts.push(new Chart(document.getElementById("ch-" + h.id), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { type: "bar", data: totals.map(hrs), ...barStyle(weeks.length), order: 2 },
+          { type: "line", data: weeks.map(() => hrs(h.weeklyMin)), borderColor: text, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, pointHitRadius: 0, order: 1 },
+        ],
+      },
+      options: {
+        ...base,
+        plugins: { ...base.plugins, tooltip: { ...base.plugins.tooltip, filter: (it) => it.datasetIndex === 0, callbacks: {
+          title: (it) => fmtRange(weeks[it[0].dataIndex]) + inProgress(it[0].dataIndex),
+          label: (it) => {
+            const m = totals[it.dataIndex];
+            return `${fmtMin(m)} of ${fmtMin(h.weeklyMin)} (${h.weeklyMin ? Math.round((m / h.weeklyMin) * 100) : 100}%)${m >= h.weeklyMin ? " ✓" : ""}`;
+          },
+        } } },
+        scales: { ...base.scales, y: { ...base.scales.y, suggestedMax: hrs(h.weeklyMin) * 1.15, ticks: { ...base.scales.y.ticks, callback: (v) => v + "h" } } },
+      },
+    }));
+  }
 }
 
 function renderSettings() {
@@ -457,6 +589,11 @@ view.addEventListener("click", (ev) => {
     const now = weekStart(todayKey());
     selectedWeek = v === "now" ? now : addDays(selectedWeek, Number(v));
     if (selectedWeek > now) selectedWeek = now;
+    return render();
+  }
+  const range = t.closest("[data-range]");
+  if (range) {
+    historyWeeks = Number(range.dataset.range);
     return render();
   }
   const rnav = t.closest("[data-rnav]");
